@@ -13,6 +13,7 @@ fn processFile(
     source: Source,
     data_issues: std.StringHashMap(Template.TokenSlice),
     scratch: *std.ArrayList(u8),
+    issues: *std.ArrayList(Issue),
     writer: anytype,
 ) !void {
     const metadata = try file.metadata();
@@ -25,14 +26,14 @@ fn processFile(
 
     var iter = data_issues.iterator();
     while (iter.next()) |issue_entry| {
-        const issues = try Issue.scan(alloc, issue_entry.value_ptr.*, comments);
-        defer alloc.free(issues);
+        try Issue.scan(issue_entry.value_ptr.*, comments, issues);
+        defer issues.clearRetainingCapacity();
 
-        if (issues.len > 0) {
+        if (issues.items.len > 0) {
             try writer.writeAll(path);
             try writer.writeAll(":\n");
 
-            for (issues) |issue| {
+            for (issues.items) |issue| {
                 try writer.writeAll("  - ");
                 try Template.format(writer, issue_entry.value_ptr.*, issue);
                 try writer.writeAll("\n");
@@ -138,6 +139,9 @@ fn mainWithAlloc(alloc: std.mem.Allocator) !void {
     var scratch = std.ArrayList(u8).init(alloc);
     defer scratch.deinit();
 
+    var issues = std.ArrayList(Issue).init(alloc);
+    defer issues.deinit();
+
     var root_dir = (if (std.fs.path.isAbsolute(root_dir_path)) std.fs.openDirAbsolute(root_dir_path, .{
         .iterate = true,
     }) else std.fs.cwd().openDir(root_dir_path, .{
@@ -153,7 +157,7 @@ fn mainWithAlloc(alloc: std.mem.Allocator) !void {
             };
 
             if (data_sources.get(file_ext)) |source| {
-                try processFile(alloc, file, root_dir_path, source, data_issues, &scratch, stdout.writer());
+                try processFile(alloc, file, root_dir_path, source, data_issues, &scratch, &issues, stdout.writer());
             }
             return;
         },
@@ -183,7 +187,7 @@ fn mainWithAlloc(alloc: std.mem.Allocator) !void {
         var file = try root_dir.openFile(entry.path, .{});
         defer file.close();
 
-        try processFile(alloc, file, entry.path, source, data_issues, &scratch, stdout.writer());
+        try processFile(alloc, file, entry.path, source, data_issues, &scratch, &issues, stdout.writer());
     }
 }
 

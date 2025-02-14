@@ -49,10 +49,7 @@ pub fn readDir(alloc: Allocator, dir: std.fs.Dir) !std.StringHashMap(Template.To
     return map;
 }
 
-pub fn scan(alloc: Allocator, slice: Template.TokenSlice, comments: []const []const u8) ![]const Issue {
-    var list = std.ArrayList(Issue).init(alloc);
-    defer list.deinit();
-
+pub fn scan(slice: Template.TokenSlice, comments: []const []const u8, list: *std.ArrayList(Issue)) !void {
     for (comments) |comment| {
         var i: usize = 0;
         while (i < comment.len) : (i += 1) {
@@ -60,6 +57,4 @@ pub fn scan(alloc: Allocator, slice: Template.TokenSlice, comments: []const []co
             i -= 1;
         }
     }
-
-    return try list.toOwnedSlice();
 }
