@@ -19,9 +19,11 @@ pub fn read(alloc: Allocator, file: std.fs.File) !Source {
         .multi_line = null,
     };
 
+    var line = std.ArrayList(u8).init(alloc);
+    defer line.deinit();
+
     inline for (fields) |field| {
-        var line = std.ArrayList(u8).init(alloc);
-        defer line.deinit();
+        defer line.clearRetainingCapacity();
 
         file.reader().streamUntilDelimiter(line.writer(), '\n', null) catch |err| switch (err) {
             error.EndOfStream => {},

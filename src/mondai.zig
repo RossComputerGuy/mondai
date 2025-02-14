@@ -12,14 +12,15 @@ fn processFile(
     path: []const u8,
     source: Source,
     data_issues: std.StringHashMap(Template.TokenSlice),
+    scratch: *std.ArrayList(u8),
     writer: anytype,
 ) !void {
     const metadata = try file.metadata();
 
-    const buff = try file.readToEndAlloc(alloc, metadata.size());
-    defer alloc.free(buff);
+    try file.reader().readAllArrayList(scratch, metadata.size());
+    defer scratch.clearRetainingCapacity();
 
-    const comments = try source.scan(buff);
+    const comments = try source.scan(scratch.items);
     defer alloc.free(comments);
 
     var iter = data_issues.iterator();
@@ -134,6 +135,9 @@ fn mainWithAlloc(alloc: std.mem.Allocator) !void {
         data_issues.deinit();
     }
 
+    var scratch = std.ArrayList(u8).init(alloc);
+    defer scratch.deinit();
+
     var root_dir = (if (std.fs.path.isAbsolute(root_dir_path)) std.fs.openDirAbsolute(root_dir_path, .{
         .iterate = true,
     }) else std.fs.cwd().openDir(root_dir_path, .{
@@ -149,7 +153,7 @@ fn mainWithAlloc(alloc: std.mem.Allocator) !void {
             };
 
             if (data_sources.get(file_ext)) |source| {
-                try processFile(alloc, file, root_dir_path, source, data_issues, stdout.writer());
+                try processFile(alloc, file, root_dir_path, source, data_issues, &scratch, stdout.writer());
             }
             return;
         },
@@ -179,7 +183,7 @@ fn mainWithAlloc(alloc: std.mem.Allocator) !void {
         var file = try root_dir.openFile(entry.path, .{});
         defer file.close();
 
-        try processFile(alloc, file, entry.path, source, data_issues, stdout.writer());
+        try processFile(alloc, file, entry.path, source, data_issues, &scratch, stdout.writer());
     }
 }
 
