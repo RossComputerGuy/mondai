@@ -7,7 +7,9 @@ const Issue = @import("mondai/Issue.zig");
 const Source = @import("mondai/Source.zig");
 
 fn mainWithAlloc(alloc: std.mem.Allocator) !void {
-    const stdout = std.io.getStdOut().writer();
+    var stdout = std.io.bufferedWriter(std.io.getStdOut().writer());
+    defer stdout.flush() catch |err| std.debug.panic("Failed to flush stdout: {}", .{err});
+
     const stderr = std.io.getStdErr().writer();
 
     var args = try std.process.argsWithAllocator(alloc);
@@ -29,7 +31,7 @@ fn mainWithAlloc(alloc: std.mem.Allocator) !void {
 
     while (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
-            try stdout.writeAll(
+            try stdout.writer().writeAll(
                 \\mondai [options] [path]
                 \\
                 \\Options:
@@ -141,13 +143,13 @@ fn mainWithAlloc(alloc: std.mem.Allocator) !void {
             defer alloc.free(issues);
 
             if (issues.len > 0) {
-                try stdout.writeAll(entry.path);
-                try stdout.writeAll(":\n");
+                try stdout.writer().writeAll(entry.path);
+                try stdout.writer().writeAll(":\n");
 
                 for (issues) |issue| {
-                    try stdout.writeAll("  - ");
-                    try Template.format(stdout, issue_entry.value_ptr.*, issue);
-                    try stdout.writeAll("\n");
+                    try stdout.writer().writeAll("  - ");
+                    try Template.format(stdout.writer(), issue_entry.value_ptr.*, issue);
+                    try stdout.writer().writeAll("\n");
                 }
             }
         }
