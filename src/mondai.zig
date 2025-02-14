@@ -6,6 +6,40 @@ const Template = @import("mondai/Template.zig");
 const Issue = @import("mondai/Issue.zig");
 const Source = @import("mondai/Source.zig");
 
+fn processFile(
+    alloc: std.mem.Allocator,
+    file: std.fs.File,
+    path: []const u8,
+    source: Source,
+    data_issues: std.StringHashMap(Template.TokenSlice),
+    writer: anytype,
+) !void {
+    const metadata = try file.metadata();
+
+    const buff = try file.readToEndAlloc(alloc, metadata.size());
+    defer alloc.free(buff);
+
+    const comments = try source.scan(buff);
+    defer alloc.free(comments);
+
+    var iter = data_issues.iterator();
+    while (iter.next()) |issue_entry| {
+        const issues = try Issue.scan(alloc, issue_entry.value_ptr.*, comments);
+        defer alloc.free(issues);
+
+        if (issues.len > 0) {
+            try writer.writeAll(path);
+            try writer.writeAll(":\n");
+
+            for (issues) |issue| {
+                try writer.writeAll("  - ");
+                try Template.format(writer, issue_entry.value_ptr.*, issue);
+                try writer.writeAll("\n");
+            }
+        }
+    }
+}
+
 fn mainWithAlloc(alloc: std.mem.Allocator) !void {
     var stdout = std.io.bufferedWriter(std.io.getStdOut().writer());
     defer stdout.flush() catch |err| std.debug.panic("Failed to flush stdout: {}", .{err});
@@ -100,11 +134,27 @@ fn mainWithAlloc(alloc: std.mem.Allocator) !void {
         data_issues.deinit();
     }
 
-    var root_dir = if (std.fs.path.isAbsolute(root_dir_path)) try std.fs.openDirAbsolute(root_dir_path, .{
+    var root_dir = (if (std.fs.path.isAbsolute(root_dir_path)) std.fs.openDirAbsolute(root_dir_path, .{
         .iterate = true,
-    }) else try std.fs.cwd().openDir(root_dir_path, .{
+    }) else std.fs.cwd().openDir(root_dir_path, .{
         .iterate = true,
-    });
+    })) catch |err| switch (err) {
+        error.NotDir => {
+            var file = if (std.fs.path.isAbsolute(root_dir_path)) try std.fs.openFileAbsolute(root_dir_path, .{}) else try std.fs.cwd().openFile(root_dir_path, .{});
+            defer file.close();
+
+            const file_ext = blk: {
+                const tmp = std.fs.path.extension(root_dir_path);
+                break :blk tmp[@min(tmp.len, 1)..];
+            };
+
+            if (data_sources.get(file_ext)) |source| {
+                try processFile(alloc, file, root_dir_path, source, data_issues, stdout.writer());
+            }
+            return;
+        },
+        else => return err,
+    };
     defer root_dir.close();
 
     var walker = try root_dir.walk(alloc);
@@ -124,35 +174,12 @@ fn mainWithAlloc(alloc: std.mem.Allocator) !void {
             if (std.mem.eql(u8, ext, file_ext)) continue;
         }
 
+        const source = data_sources.get(file_ext) orelse continue;
+
         var file = try root_dir.openFile(entry.path, .{});
         defer file.close();
 
-        const metadata = try file.metadata();
-
-        const buff = try file.readToEndAlloc(alloc, metadata.size());
-        defer alloc.free(buff);
-
-        const source = data_sources.get(file_ext) orelse continue;
-
-        const comments = try source.scan(buff);
-        defer alloc.free(comments);
-
-        var iter = data_issues.iterator();
-        while (iter.next()) |issue_entry| {
-            const issues = try Issue.scan(alloc, issue_entry.value_ptr.*, comments);
-            defer alloc.free(issues);
-
-            if (issues.len > 0) {
-                try stdout.writer().writeAll(entry.path);
-                try stdout.writer().writeAll(":\n");
-
-                for (issues) |issue| {
-                    try stdout.writer().writeAll("  - ");
-                    try Template.format(stdout.writer(), issue_entry.value_ptr.*, issue);
-                    try stdout.writer().writeAll("\n");
-                }
-            }
-        }
+        try processFile(alloc, file, entry.path, source, data_issues, stdout.writer());
     }
 }
 
