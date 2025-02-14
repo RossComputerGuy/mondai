@@ -145,12 +145,9 @@ fn mainWithAlloc(alloc: std.mem.Allocator) !void {
                 try stdout.writeAll(":\n");
 
                 for (issues) |issue| {
-                    try stdout.print("  - {s}: {s}'s {s} #{d}\n", .{
-                        issue_entry.key_ptr.*,
-                        issue.owner,
-                        issue.repo,
-                        issue.issue,
-                    });
+                    try stdout.writeAll("  - ");
+                    try Template.format(stdout, issue_entry.value_ptr.*, issue);
+                    try stdout.writeAll("\n");
                 }
             }
         }
