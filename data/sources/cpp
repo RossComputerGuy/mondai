@@ -1,2 +1,2 @@
 single-line: // %content%
-multi-line: /* %contents% */
+multi-line: /* %content% */
