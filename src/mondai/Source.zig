@@ -22,10 +22,12 @@ pub fn read(alloc: Allocator, file: std.fs.File) !Source {
     var line = std.ArrayList(u8).init(alloc);
     defer line.deinit();
 
+    var reader = std.io.bufferedReader(file.reader());
+
     inline for (fields) |field| {
         defer line.clearRetainingCapacity();
 
-        file.reader().streamUntilDelimiter(line.writer(), '\n', null) catch |err| switch (err) {
+        reader.reader().streamUntilDelimiter(line.writer(), '\n', null) catch |err| switch (err) {
             error.EndOfStream => {},
             else => return err,
         };
